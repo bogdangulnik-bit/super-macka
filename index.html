@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Super Mačka</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#87CEEB">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{background:#87CEEB;overflow:hidden;font-family:Arial,sans-serif;touch-action:none}
+#game{width:100vw;height:100vh;position:relative;overflow:hidden;background:linear-gradient(#87CEEB 0%,#B0E0E6 60%,#90EE90 60%,#228B22 100%)}
+#hud{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;z-index:10;color:white;font-weight:bold;font-size:20px;text-shadow:2px 2px 0 #000}
+#player{position:absolute;width:48px;height:48px;font-size:44px;line-height:48px;text-align:center;z-index:5;transition:transform .1s}
+#player.flip{transform:scaleX(-1)}
+.tile{position:absolute}
+.coin{position:absolute;width:28px;height:28px;font-size:26px;text-align:center;animation:spin .8s infinite alternate}
+@keyframes spin{from{transform:scale(1)}to{transform:scale(1.2)}}
+.enemy{position:absolute;width:42px;height:42px;font-size:38px;text-align:center;z-index:4}
+.goal{position:absolute;width:50px;height:70px;font-size:60px;text-align:center;z-index:4}
+#controls{position:absolute;bottom:15px;left:0;right:0;display:flex;justify-content:space-between;padding:0 15px;z-index:20}
+.btn{width:70px;height:70px;border-radius:50%;background:rgba(255,255,255,.85);border:3px solid #333;font-size:30px;display:flex;align-items:center;justify-content:center;user-select:none}
+.btn:active{background:#FFD700}
+#jumpBtn{width:85px;height:85px;background:#FF6B6B;font-size:35px}
+#msg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.85);color:white;padding:25px;border-radius:20px;text-align:center;z-index:30;display:none}
+#msg h1{font-size:32px;margin-bottom:10px}
+#msg button{padding:12px 25px;font-size:20px;background:#FFD700;border:none;border-radius:10px;margin-top:15px;font-weight:bold}
+.ladder{position:absolute;background:repeating-linear-gradient(#8B4513 0 6px,#DEB887 6px 12px);border:2px solid #5C3317}
+</style>
+</head>
+<body>
+<div id="game">
+<div id="hud"><span>🪙 <span id="coins">0</span></span><span>❤️ <span id="lives">3</span></span><span>🏁 Level 1</span></div>
+<div id="player">🐱</div>
+<div id="controls">
+<div style="display:flex;gap:10px"><div class="btn" id="leftBtn">⬅️</div><div class="btn" id="rightBtn">➡️</div><div class="btn" id="upBtn">⬆️</div></div>
+<div class="btn" id="jumpBtn">⬆️</div>
+</div>
+<div id="msg"><h1 id="msgTitle">🎉 POBIJEDIO SI!</h1><p id="msgText"></p><button onclick="location.reload()">IGRAJ OPET</button></div>
+</div>
+<script>
+const game=document.getElementById('game');
+let px=50,py=400,vx=0,vy=0,onGround=false,coins=0,lives=3,climbing=false,dead=false;
+let keys={};
+const W=4000,H=600;
+let camX=0;
+// Platforme: x,y,w,h, tip
+let platforms=[
+{x:0,y:550,w:800,h:100},{x:850,y:550,w:600,h:100},{x:1500,y:550,w:700,h:100},{x:2250,y:550,w:600,h:100},{x:2900,y:550,w:1100,h:100},
+{x:400,y:430,w:120,h:30},{x:650,y:350,w:120,h:30},{x:1100,y:430,w:120,h:30},{x:1350,y:350,w:120,h:30},
+{x:1750,y:430,w:120,h:30},{x:2000,y:350,w:120,h:30},{x:2450,y:430,w:120,h:30},{x:2700,y:350,w:120,h:30},
+{x:3100,y:430,w:120,h:30},{x:3350,y:350,w:120,h:30},
+];
+let ladders=[{x:920,y:350,w:50,h:200},{x:2200,y:350,w:50,h:200}];
+let coinPos=[{x:430,y:390},{x:680,y:310},{x:1130,y:390},{x:1380,y:310},{x:1780,y:390},{x:2030,y:310},{x:2480,y:390},{x:2730,y:310},{x:3130,y:390},{x:3380,y:310},{x:1000,y:500},{x:1600,y:500},{x:2600,y:500}];
+let enemies=[{x:600,y:510,dir:1,range:200,start:600},{x:1300,y:510,dir:-1,range:150,start:1300},{x:1900,y:510,dir:1,range:180,start:1900},{x:2600,y:510,dir:-1,range:200,start:2600},{x:3200,y:510,dir:1,range:150,start:3200}];
+let spikes=[{x:800,y:520},{x:1450,y:520},{x:2850,y:520}];
+let coinEls=[],enemyEls=[],spikeEls=[];
+function drawWorld(){
+ document.querySelectorAll('.tile,.coin,.enemy,.goal,.ladder,.spike').forEach(e=>e.remove());
+ platforms.forEach(p=>{
+  let d=document.createElement('div');d.className='tile';
+  d.style.left=p.x-camX+'px';d.style.top=p.y+'px';d.style.width=p.w+'px';d.style.height=p.h+'px';
+  d.style.background=p.y>500?'#8B4513':'#CD853F';d.style.borderTop='5px solid #228B22';d.style.borderRadius='5px';
+  game.appendChild(d);
+ });
+ ladders.forEach(l=>{
+  let d=document.createElement('div');d.className='ladder';d.style.left=l.x-camX+'px';d.style.top=l.y+'px';d.style.width=l.w+'px';d.style.height=l.h+'px';game.appendChild(d);
+ });
+ coinEls=[];coinPos.forEach((c,i)=>{
+  if(c.taken)return;let d=document.createElement('div');d.className='coin';d.textContent='🪙';d.style.left=c.x-camX+'px';d.style.top=c.y+'px';game.appendChild(d);coinEls.push(d);
+ });
+ enemyEls=[];enemies.forEach(e=>{
+  let d=document.createElement('div');d.className='enemy';d.textContent='🐶';d.style.left=e.x-camX+'px';d.style.top=e.y+'px';game.appendChild(d);enemyEls.push(d);
+ });
+ spikeEls=[];spikes.forEach(s=>{
+  let d=document.createElement('div');d.className='spike';d.textContent='🌵';d.style.position='absolute';d.style.fontSize='30px';d.style.left=s.x-camX+'px';d.style.top=s.y+'px';game.appendChild(d);spikeEls.push(d);
+ });
+ let g=document.createElement('div');g.className='goal';g.textContent='🏁';g.style.left=3850-camX+'px';g.style.top=480+'px';game.appendChild(g);
+}
+function playSound(f){try{let a=new (window.AudioContext||window.webkitAudioContext)();let o=a.createOscillator();o.frequency.value=f;o.connect(a.destination);o.start();o.stop(a.currentTime+0.15);}catch(e){}}
+function update(){
+ if(dead)return;
+ let speed=5;
+ if(keys.left)vx=-speed;else if(keys.right)vx=speed;else vx=0;
+ if(keys.up){
+  for(let l of ladders){if(px+20>l.x&&px+20<l.x+l.w&&py+48>l.y&&py<l.y+l.h){climbing=true;py-=4;vy=0;break;}}
+ }
+ if(!climbing)vy+=0.7;
+ if(vy>12)vy=12;
+ // Skok
+ if(keys.jump&&onGround){vy=-13;onGround=false;playSound(600);}
+ px+=vx;py+=vy;climbing=false;
+ if(px<0)px=0;if(px>3950)px=3950;
+ // Kolizija platforme
+ onGround=false;
+ platforms.forEach(p=>{
+  if(px+40>p.x&&px<p.x+p.w&&py+48>p.y&&py+48< p.y+20&&vy>=0){py=p.y-48;vy=0;onGround=true;}
+ });
+ if(py>600){loseLife();return;}
+ // Kamera
+ camX=px-150;if(camX<0)camX=0;if(camX>3200)camX=3200;
+ // Novčići
+ coinPos.forEach(c=>{if(!c.taken&&Math.abs(px-c.x)<35&&Math.abs(py-c.y)<40){c.taken=true;coins++;document.getElementById('coins').textContent=coins;playSound(900);}});
+ // Neprijatelji
+ enemies.forEach(e=>{
+  e.x+=e.dir*1.5;if(e.x>e.start+e.range)e.dir=-1;if(e.x<e.start-e.range)e.dir=1;
+  if(Math.abs(px-e.x)<35&&Math.abs(py-e.y)<35){
+   if(vy>0&&py<e.y){e.x=-9999;playSound(400);coins+=2;document.getElementById('coins').textContent=coins;}
+   else loseLife();
+  }
+ });
+ // Bodlje
+ spikes.forEach(s=>{if(Math.abs(px-s.x)<30&&Math.abs(py+48-(s.y+30))<30)loseLife();});
+ // Cilj
+ if(px>3800){document.getElementById('msgTitle').textContent='🎉 POBIJEDIO SI!';document.getElementById('msgText').textContent='Mačka je stigla do cilja! Novčići: '+coins;document.getElementById('msg').style.display='block';dead=true;playSound(1000);}
+ let p=document.getElementById('player');p.style.left=px-camX+'px';p.style.top=py+'px';
+ if(vx<0)p.classList.add('flip');if(vx>0)p.classList.remove('flip');
+ drawWorld();
+ requestAnimationFrame(update);
+}
+function loseLife(){
+ lives--;document.getElementById('lives').textContent=lives;playSound(200);
+ if(lives<=0){document.getElementById('msgTitle').textContent='💀 GAME OVER';document.getElementById('msgText').textContent='Psi su te uhvatili! Novčići: '+coins;document.getElementById('msg').style.display='block';dead=true;}
+ else{px=50;py=400;
